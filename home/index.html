@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+    <title>4D - 5D | TT</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <span class="line1">4D | 5D</span>
+                <span class="line2">PROJECT</span>
+            </h1>
+        </div>
+
+        <div class="main-grid">
+            <div class="neomorph-card input-section">
+                <h2 class="input-title">Input Data Prediksi</h2>
+                
+                <div class="input-group">
+                    <label class="input-label">Nama</label>
+                    <input 
+                        type="text" 
+                        id="playerName" 
+                        placeholder="Masukkan nama"
+                    />
+                </div>
+                
+                <div class="input-group">
+                    <label class="input-label">Masukan 3 - 5 History Terakhir | Waktu Yang Sama</label>
+                    <input 
+                        type="text" 
+                        id="numbersInput" 
+                        placeholder="Contoh: 1234 5678 9999 7676 1212"
+                    />
+                </div>
+                
+                <div class="button-group">
+                    <div class="main-buttons">
+                        <button class="neomorph-button btn-predict" id="predictBtn" onclick="predictNumbers()">
+                            Lengkapi Data Dulu
+                        </button>
+                        <button class="neomorph-button btn-clear" onclick="clearResults()">
+                            Clear Input
+                        </button>
+                    </div>
+                    
+                    <div class="example-buttons">
+                        <button class="neomorph-button btn-example" onclick="fillExample4D()">
+                            Contoh 4D
+                        </button>
+                        <button class="neomorph-button btn-example" onclick="fillExample5D()">
+                            Contoh 5D
+                        </button>
+                    </div>
+                    
+                    <div class="backup-buttons">
+                        <button class="neomorph-button btn-backup" onclick="backupData()">
+                            Backup
+                        </button>
+                        <button class="neomorph-button btn-restore" onclick="document.getElementById('backupFileInput').click()">
+                            Restore
+                        </button>
+                    </div>
+                </div>
+                
+                <input type="file" id="backupFileInput" accept=".json" onchange="restoreData(event)" />
+            </div>
+        </div>
+
+        <div id="predictionResultSection" style="display: none;"></div>
+
+        <div class="section-navigation">
+            <button class="neomorph-button btn-history active" onclick="showHistorySection()">
+                <span>Riwayat Prediksi</span>
+            </button>
+            <button class="neomorph-button btn-stats" onclick="showStatsSection()">
+                <span>Statistik Prediksi</span>
+            </button>
+        </div>
+
+        <div class="neomorph-card" id="historySection" style="display: block;">
+            <div class="section-header-title">
+                <h2>Riwayat Prediksi</h2>
+            </div>
+            <div id="historyContent">
+                <div class="empty-state">
+                    <h3>Belum Ada History</h3>
+                    <p>Prediksi akan tersimpan otomatis di sini</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="neomorph-card" id="statsSection" style="display: none;">
+            <div class="section-header-title">
+                <h2>Statistik Prediksi</h2>
+            </div>
+            <div id="statsContent">
+                <div class="empty-state">
+                    <h3>Belum Ada Statistik</h3>
+                    <p>Verifikasi hasil prediksi untuk melihat statistik</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/metode.js"></script>
+    <script src="../js/main.js"></script>
+</body>
+</html>
