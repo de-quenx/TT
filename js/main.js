@@ -97,12 +97,12 @@ class AdvancedTotoPredictor {
         
         const numberStrings = cleanInput.split(' ').filter(num => num.trim() !== '');
 
-        if (numberStrings.length < 3) {
-            throw new Error('Minimal 3 nomor diperlukan untuk prediksi');
+        if (numberStrings.length < 4) {
+            throw new Error('Minimal 4 nomor diperlukan untuk prediksi');
         }
 
-        if (numberStrings.length > 5) {
-            throw new Error('Maksimal 5 nomor history terakhir');
+        if (numberStrings.length > 6) {
+            throw new Error('Maksimal 6 nomor history terakhir');
         }
 
         const firstLength = numberStrings[0].length;
@@ -370,7 +370,7 @@ function updatePredictButton() {
             const cleanInput = numbersInput.replace(/[,;]/g, ' ').replace(/\s+/g, ' ').trim();
             const numberStrings = cleanInput.split(' ').filter(num => num.trim() !== '');
             
-            if (numberStrings.length >= 3 && numberStrings.length <= 5) {
+            if (numberStrings.length >= 4 && numberStrings.length <= 6) {
                 const firstLength = numberStrings[0].length;
                 
                 if ([4, 5].includes(firstLength)) {
@@ -386,10 +386,10 @@ function updatePredictButton() {
                 } else {
                     errorMessage = 'Nomor harus 4D atau 5D';
                 }
-            } else if (numberStrings.length < 3) {
-                errorMessage = 'Minimal 3 nomor';
+            } else if (numberStrings.length < 4) {
+                errorMessage = 'Minimal 4 nomor';
             } else {
-                errorMessage = 'Maksimal 5 nomor';
+                errorMessage = 'Maksimal 6 nomor';
             }
         } catch (error) {
             isValidInput = false;
@@ -967,10 +967,10 @@ document.getElementById('numbersInput').addEventListener('input', function(e) {
     let cleanInput = input.replace(/[,;]/g, ' ').replace(/\s+/g, ' ');
     let numberStrings = cleanInput.split(' ').filter(num => num.length > 0);
     
-    if (numberStrings.length > 5) {
-        numberStrings = numberStrings.slice(0, 5);
+    if (numberStrings.length > 6) {
+        numberStrings = numberStrings.slice(0, 6);
         e.target.value = numberStrings.join(' ');
-        showInputWarning('Maksimal 5 nomor history terakhir');
+        showInputWarning('Maksimal 6 nomor history terakhir');
     }
     
     updatePredictButton();

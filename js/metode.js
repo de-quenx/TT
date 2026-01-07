@@ -1,6 +1,6 @@
 const metodeNames = {
     1: 'POLA AWAL',
-    2: 'MIRROR PRO',
+    2: 'MIRROR PRO', 
     3: 'SMART LOCK',
     4: 'TAIL SCAN',
     5: 'DOUBLE HIT',
@@ -15,7 +15,7 @@ const metodeNames = {
 
 const metodeReasons = {
     1: 'Menganalisis pola digit awal untuk prediksi maksimal',
-    2: 'Sistem cermin terbalik untuk stabilitas tinggi',
+    2: 'Sistem cermin terbalik untuk stabilitas tinggi', 
     3: 'Penguncian cerdas berdasarkan frekuensi kemunculan',
     4: 'Pemindaian ekor dengan analisis siklus berkelanjutan',
     5: 'Deteksi pola kembar untuk akurasi double digit',
@@ -29,501 +29,594 @@ const metodeReasons = {
 };
 
 class MetodeEngine {
-    generateSmartPercentage(complexity, stability) {
-        const base = 15 + (complexity * 8) + (stability * 12);
-        const variance = Math.random() * 30;
-        return Math.min(85, Math.max(15, Math.floor(base + variance)));
+    calculateInputSignature(numbers) {
+        if (!numbers || numbers.length === 0) return { sum: 0, avg: 0, variance: 0, range: 0, length: 0, digitLen: 4, hash: 12345 };
+        
+        const digitLen = numbers[0].toString().length;
+        const sum = numbers.reduce((a, b) => a + b, 0);
+        const avg = sum / numbers.length;
+        const variance = numbers.reduce((acc, num) => acc + Math.pow(num - avg, 2), 0) / numbers.length;
+        const range = Math.max(...numbers) - Math.min(...numbers);
+        
+        return {
+            sum: sum,
+            avg: avg,
+            variance: variance,
+            range: range,
+            length: numbers.length,
+            digitLen: digitLen,
+            hash: Math.abs(Math.floor(sum * 7 + avg * 13 + variance * 0.01 + range * 19)) % 100000
+        };
+    }
+
+    generateDeterministicPercentage(signature, metodeNum, complexity, stability) {
+        const seed = (signature.hash + metodeNum * 1000) % 10000;
+        const deterministicRandom = (seed * 9301 + 49297) % 233280 / 233280;
+        
+        const lengthFactor = Math.min(signature.length - 2, 4) * 2;
+        const digitFactor = signature.digitLen >= 4 ? (signature.digitLen - 3) * 1.5 : 0;
+        const varianceFactor = signature.variance > 500 ? -3 : signature.variance > 100 ? 0 : 2;
+        const rangeFactor = signature.range > 5000 ? 3 : signature.range > 2000 ? 1 : -1;
+        
+        const base = 20 + (complexity * 12) + (stability * 10) + lengthFactor + digitFactor + varianceFactor + rangeFactor;
+        const variance = (deterministicRandom * 8) - 4;
+        const percentage = Math.min(60, Math.max(20, Math.floor(base + variance)));
+        
+        return percentage;
+    }
+
+    analyzePositionalDigits(numbers) {
+        if (!numbers || numbers.length === 0) return [];
+        
+        const len = numbers[0].toString().length;
+        const positions = Array(len).fill().map(() => []);
+        
+        numbers.forEach(num => {
+            const digits = num.toString().padStart(len, '0').split('');
+            digits.forEach((digit, pos) => {
+                positions[pos].push(parseInt(digit));
+            });
+        });
+        
+        return positions.map(posArray => {
+            const freq = Array(10).fill(0);
+            const weights = Array(10).fill(0);
+            
+            posArray.forEach((d, idx) => {
+                const weight = posArray.length - idx;
+                freq[d]++;
+                weights[d] += weight;
+            });
+            
+            const maxWeight = Math.max(...weights);
+            const hotDigits = weights.map((w, d) => ({ 
+                digit: d, 
+                frequency: freq[d], 
+                weight: w, 
+                score: w + freq[d] * 2,
+                isHot: w >= maxWeight * 0.75 
+            })).sort((a, b) => b.score - a.score);
+            
+            return hotDigits;
+        });
+    }
+
+    detectMultiPatterns(numbers) {
+        const patterns = {
+            sequential: 0, palindrome: 0, repeated: 0, ascending: 0, descending: 0, twin: 0, mirror: 0
+        };
+        
+        if (!numbers || numbers.length === 0) return patterns;
+        
+        numbers.forEach((num, idx) => {
+            const str = num.toString().padStart(numbers[0].toString().length, '0');
+            const digits = str.split('').map(d => parseInt(d));
+            const weight = numbers.length - idx;
+            
+            if (str === str.split('').reverse().join('')) patterns.palindrome += weight;
+            
+            let ascending = true, descending = true, sequential = true;
+            for (let i = 1; i < digits.length; i++) {
+                if (digits[i] !== digits[i-1] + 1) sequential = false;
+                if (digits[i] <= digits[i-1]) ascending = false;
+                if (digits[i] >= digits[i-1]) descending = false;
+            }
+            
+            if (sequential) patterns.sequential += weight;
+            if (ascending) patterns.ascending += weight;
+            if (descending) patterns.descending += weight;
+            
+            const uniqueDigits = new Set(digits);
+            if (uniqueDigits.size <= 2) patterns.repeated += weight;
+            if (uniqueDigits.size === 2) patterns.twin += weight;
+            
+            if (digits.length > 1 && digits[0] === digits[digits.length-1]) {
+                patterns.mirror += weight;
+            }
+        });
+        
+        return patterns;
     }
 
     polaAwalMetode(numbers) {
-        const asDigits = numbers.map(n => parseInt(n.toString()[0]));
-        const patterns = this.analyzePatterns(asDigits);
-        const prediction = this.predictFromPatterns(patterns, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        const posAnalysis = this.analyzePositionalDigits(numbers);
+        const patterns = this.detectMultiPatterns(numbers);
+        
+        let prediction = '';
+        for (let i = 0; i < digitLen; i++) {
+            const posHot = posAnalysis[i] || [];
+            const baseDigit = posHot.length > 0 ? posHot[0].digit : 5;
+            const secondChoice = posHot.length > 1 ? posHot[1].digit : baseDigit;
+            const seed = (signature.hash + i) % 10;
+            const trendAdjust = Math.floor((seed % 3) - 1);
+            const patternAdjust = patterns.ascending > 0 ? 1 : patterns.descending > 0 ? -1 : 0;
+            const blendedDigit = Math.floor((baseDigit * 0.7) + (secondChoice * 0.3));
+            const finalDigit = (blendedDigit + trendAdjust + patternAdjust + 10) % 10;
+            prediction += finalDigit.toString();
+        }
+        
         return { 
             result: prediction, 
-            confidence: this.generateSmartPercentage(0.7, 0.8), 
+            confidence: this.generateDeterministicPercentage(signature, 1, 0.45, 0.52), 
             metodeNum: 1, 
             reason: metodeReasons[1] 
         };
     }
 
     mirrorProMetode(numbers) {
-        const kopDigits = numbers.map(n => n.toString().length >= 4 ? parseInt(n.toString()[1]) : 0);
-        let result = '';
+        const signature = this.calculateInputSignature(numbers);
+        const digitLen = numbers[0].toString().length;
+        const posAnalysis = this.analyzePositionalDigits(numbers);
         
-        for (let i = 0; i < numbers[0].toString().length; i++) {
-            const cyclicSum = kopDigits.reduce((sum, digit, idx) => {
-                return sum + (digit * Math.pow(2, idx % 3));
-            }, 0);
-            const mirroredDigit = (9 - (cyclicSum % 10)) % 10;
-            result += ((mirroredDigit + i) % 10).toString();
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            const posHot = posAnalysis[i] || [];
+            const baseDigit = posHot.length > 0 ? posHot[0].digit : 5;
+            const secondChoice = posHot.length > 1 ? posHot[1].digit : baseDigit;
+            const seed = (signature.hash + i * 13) % 10;
+            
+            const mirrorLogic = (9 - baseDigit + secondChoice + seed) % 10;
+            const inverseMirror = (baseDigit + mirrorLogic) % 10;
+            const finalDigit = Math.floor((inverseMirror * 0.6 + baseDigit * 0.4)) % 10;
+            
+            result += finalDigit.toString();
         }
         
         return { 
             result, 
-            confidence: this.generateSmartPercentage(0.8, 0.9), 
+            confidence: this.generateDeterministicPercentage(signature, 2, 0.48, 0.55),
             metodeNum: 2, 
             reason: metodeReasons[2] 
         };
     }
 
     smartLockMetode(numbers) {
-        const len = numbers[0].toString().length;
-        const positionWeights = [3, 2, 4, 1, 5];
-        let result = '';
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        const posAnalysis = this.analyzePositionalDigits(numbers);
+        const patterns = this.detectMultiPatterns(numbers);
         
-        for (let pos = 0; pos < len; pos++) {
-            let weightedSum = 0;
-            numbers.forEach((num, idx) => {
-                const digit = parseInt(num.toString()[pos] || '0');
-                const weight = positionWeights[idx % positionWeights.length];
-                weightedSum += digit * weight;
-            });
+        let result = '';
+        for (let pos = 0; pos < digitLen; pos++) {
+            const analysis = posAnalysis[pos] || [];
+            const topCandidates = analysis.slice(0, 4);
             
-            const finalDigit = this.applyAdvancedModulo(weightedSum, pos, numbers.length);
-            result += finalDigit.toString();
+            let lockDigit;
+            if (topCandidates.length > 1 && topCandidates[0].score > topCandidates[1].score * 1.8) {
+                lockDigit = topCandidates[0].digit;
+            } else {
+                const recentDigits = numbers.slice(-Math.min(3, len))
+                    .map(n => parseInt(n.toString().padStart(digitLen, '0')[pos]));
+                const recentAvg = recentDigits.reduce((a, b) => a + b, 0) / recentDigits.length;
+                
+                lockDigit = topCandidates.length > 0 ? topCandidates.reduce((closest, curr) => 
+                    Math.abs(curr.digit - recentAvg) < Math.abs(closest.digit - recentAvg) ? curr : closest
+                ).digit : Math.floor(recentAvg) % 10;
+            }
+            
+            if (patterns.palindrome > 0 && pos < Math.floor(digitLen / 2)) {
+                const mirrorPos = digitLen - 1 - pos;
+                const mirrorAnalysis = posAnalysis[mirrorPos] || [];
+                const mirrorCandidate = mirrorAnalysis.length > 0 ? mirrorAnalysis[0].digit : lockDigit;
+                lockDigit = Math.floor((lockDigit * 0.6 + mirrorCandidate * 0.4)) % 10;
+            }
+            
+            result += lockDigit.toString();
         }
         
         return { 
             result, 
-            confidence: this.generateSmartPercentage(0.6, 0.7), 
+            confidence: this.generateDeterministicPercentage(signature, 3, 0.55, 0.60),
             metodeNum: 3, 
             reason: metodeReasons[3] 
         };
     }
 
     tailScanMetode(numbers) {
-        const lastTwoDigits = numbers.map(n => n % 100);
-        const cyclicPattern = this.generateCyclicPattern(lastTwoDigits);
-        const prediction = this.extrapolateCyclic(cyclicPattern, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        const tailDigits = digitLen >= 4 ? 3 : 2;
+        
+        const tails = numbers.map(n => n % Math.pow(10, tailDigits));
+        const tailDiffs = [];
+        for (let i = 1; i < len; i++) {
+            tailDiffs.push(tails[i] - tails[i - 1]);
+        }
+        
+        const avgDiff = tailDiffs.length > 0 ? tailDiffs.reduce((a, b) => a + b, 0) / tailDiffs.length : 0;
+        const predictedTail = Math.abs(Math.floor(tails[len - 1] + avgDiff * 0.5)) % Math.pow(10, tailDigits);
+        const tailStr = predictedTail.toString().padStart(tailDigits, '0');
+        
+        let prediction = '';
+        for (let i = 0; i < digitLen; i++) {
+            let baseDigit;
+            if (i >= digitLen - tailDigits) {
+                baseDigit = parseInt(tailStr[i - (digitLen - tailDigits)]);
+            } else {
+                const posSum = numbers.slice(-Math.min(3, len))
+                    .reduce((sum, n) => sum + parseInt(n.toString().padStart(digitLen, '0')[i]), 0);
+                baseDigit = Math.floor(posSum / Math.min(3, len)) % 10;
+            }
+            
+            const seed = (signature.hash + i * 17) % 10;
+            const cycleAdjust = Math.floor(seed * avgDiff / 200) % 10;
+            const finalDigit = (baseDigit + cycleAdjust + 10) % 10;
+            prediction += finalDigit.toString();
+        }
         
         return { 
             result: prediction, 
-            confidence: this.generateSmartPercentage(0.75, 0.85), 
+            confidence: this.generateDeterministicPercentage(signature, 4, 0.46, 0.54),
             metodeNum: 4, 
             reason: metodeReasons[4] 
         };
     }
 
     doubleHitMetode(numbers) {
-        const twinData = this.detectTwinPatterns(numbers);
-        const amplifiedTwins = this.amplifyTwinSignals(twinData);
-        const prediction = this.synthesizeTwinPrediction(amplifiedTwins, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        
+        const kembarCount = {};
+        const adjacentPairs = {};
+        
+        numbers.forEach((num, idx) => {
+            const str = num.toString().padStart(digitLen, '0');
+            const weight = len - idx;
+            
+            for (let i = 0; i < str.length - 1; i++) {
+                if (str[i] === str[i + 1]) {
+                    const kembar = str[i];
+                    kembarCount[kembar] = (kembarCount[kembar] || 0) + weight;
+                }
+                
+                const pair = str[i] + str[i + 1];
+                adjacentPairs[pair] = (adjacentPairs[pair] || 0) + weight;
+            }
+        });
+        
+        const topKembar = Object.entries(kembarCount)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 4)
+            .map(([digit]) => parseInt(digit));
+        
+        const topPairs = Object.entries(adjacentPairs)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 3)
+            .map(([pair]) => pair.split('').map(d => parseInt(d)));
+        
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            let finalDigit;
+            const seed = (signature.hash + i * 23) % 10;
+            
+            if (i < topPairs.length && topPairs[i]) {
+                const pairSum = topPairs[i][0] + topPairs[i][1];
+                const kembarBase = topKembar[i % topKembar.length] || 5;
+                finalDigit = Math.floor((pairSum * 0.5 + kembarBase * 0.5 + seed * 0.1)) % 10;
+            } else {
+                const kembarBase = topKembar[i % topKembar.length] || 5;
+                finalDigit = (kembarBase + seed + 10) % 10;
+            }
+            
+            result += finalDigit.toString();
+        }
         
         return { 
-            result: prediction, 
-            confidence: this.generateSmartPercentage(0.65, 0.75), 
+            result: result, 
+            confidence: this.generateDeterministicPercentage(signature, 5, 0.42, 0.50),
             metodeNum: 5, 
             reason: metodeReasons[5] 
         };
     }
 
     megaPickMetode(numbers) {
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        const posAnalysis = this.analyzePositionalDigits(numbers);
+        
         const allDigits = numbers.join('').split('').map(d => parseInt(d));
-        const frequency = this.calculateAdvancedFrequency(allDigits);
-        const tardal = this.selectOptimalTardal(frequency, 7);
-        const prediction = this.constructFromTardal(tardal, numbers[0].toString().length);
+        const frequency = Array(10).fill(0);
+        const recency = Array(10).fill(0);
+        
+        allDigits.forEach((digit, idx) => {
+            frequency[digit]++;
+            const numIdx = Math.floor(idx / digitLen);
+            recency[digit] += (len - numIdx) * 2;
+        });
+        
+        const weightedScore = frequency.map((freq, digit) => {
+            if (freq === 0) return { digit, score: 0 };
+            const avgRecency = recency[digit] / freq;
+            const score = (freq * 3) + (avgRecency * 2.5);
+            return { digit, score };
+        });
+        
+        const tardal = weightedScore
+            .sort((a, b) => b.score - a.score)
+            .slice(0, digitLen >= 4 ? 7 : 6)
+            .map(item => item.digit);
+        
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            const posHot = posAnalysis[i] || [];
+            const posAvg = posHot.length > 0 ? posHot.slice(0, 3).reduce((sum, p) => sum + p.digit, 0) / Math.min(3, posHot.length) : 5;
+            const seed = (signature.hash + i * 29) % tardal.length;
+            
+            const nearbyTardal = tardal.length > 0 ? tardal
+                .map(t => ({ digit: t, distance: Math.abs(t - posAvg) }))
+                .sort((a, b) => a.distance - b.distance)[0].digit : Math.floor(posAvg);
+            
+            const selectedDigit = tardal.length > seed ? 
+                Math.floor((tardal[seed] * 0.5) + (nearbyTardal * 0.5)) : 
+                nearbyTardal;
+            
+            result += (selectedDigit % 10).toString();
+        }
         
         return { 
-            result: prediction, 
-            confidence: this.generateSmartPercentage(0.85, 0.95), 
+            result: result, 
+            confidence: this.generateDeterministicPercentage(signature, 6, 0.56, 0.60),
             metodeNum: 6, 
             reason: metodeReasons[6] 
         };
     }
 
     aiPrimeMetode(numbers) {
-        const analysis = this.performMultiFactorAnalysis(numbers);
-        const convergence = this.findConvergencePoints(analysis);
-        const prediction = this.optimizeWithML(convergence, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const digitLen = numbers[0].toString().length;
+        const posAnalysis = this.analyzePositionalDigits(numbers);
+        const patterns = this.detectMultiPatterns(numbers);
+        
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            const seed = (signature.hash + i * 31) % 100;
+            const trendFactor = (seed % 10) * 0.1;
+            const gapFactor = ((seed >> 1) % 10) * 0.08;
+            const cycleFactor = ((seed >> 2) % 10) * 0.07;
+            const positionFactor = posAnalysis[i] && posAnalysis[i].length > 0 ? posAnalysis[i][0].score / 100 : 0.5;
+            
+            const weights = digitLen >= 4 ? 
+                { trend: 0.25, gap: 0.20, cycle: 0.20, position: 0.35 } :
+                { trend: 0.30, gap: 0.25, cycle: 0.20, position: 0.25 };
+            
+            let aiScore = (trendFactor * weights.trend) + 
+                         (gapFactor * weights.gap) + 
+                         (cycleFactor * weights.cycle) +
+                         (positionFactor * weights.position);
+            
+            if (patterns.sequential > 0 || patterns.ascending > 0) {
+                aiScore += (i * 0.3);
+            } else if (patterns.descending > 0) {
+                aiScore -= (i * 0.3);
+            }
+            
+            const normalizedScore = Math.abs(aiScore * 10) % 10;
+            const finalDigit = Math.floor(normalizedScore);
+            
+            result += finalDigit.toString();
+        }
         
         return { 
-            result: prediction, 
-            confidence: this.generateSmartPercentage(0.9, 0.98), 
+            result: result, 
+            confidence: this.generateDeterministicPercentage(signature, 7, 0.58, 0.60),
             metodeNum: 7, 
             reason: metodeReasons[7] 
         };
     }
 
     trendMapMetode(numbers) {
-        const trends = this.analyzeTrends(numbers, 3);
-        const heatMap = this.generateHeatMap(trends);
-        const prediction = this.extractHotPattern(heatMap, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        const heatMap = Array(10).fill(0);
+        const positionHeat = Array(digitLen).fill().map(() => Array(10).fill(0));
+        const recentWeight = [10, 9, 7, 6, 5, 4, 3, 2, 1];
+        
+        numbers.forEach((num, idx) => {
+            const weight = recentWeight[Math.min(idx, recentWeight.length - 1)] || 1;
+            const digits = num.toString().padStart(digitLen, '0').split('');
+            
+            digits.forEach((digit, pos) => {
+                const d = parseInt(digit);
+                heatMap[d] += weight;
+                positionHeat[pos][d] += weight * 1.5;
+            });
+        });
+        
+        const maxHeat = Math.max(...heatMap);
+        const hotDigits = heatMap
+            .map((heat, digit) => ({ digit, heat, ratio: heat / (maxHeat || 1) }))
+            .filter(item => item.ratio >= 0.35)
+            .sort((a, b) => b.heat - a.heat)
+            .slice(0, digitLen >= 4 ? 6 : 5)
+            .map(item => item.digit);
+        
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            const posHeatMax = Math.max(...positionHeat[i]);
+            const posHotDigits = positionHeat[i]
+                .map((heat, digit) => ({ digit, heat }))
+                .filter(item => item.heat >= (posHeatMax || 1) * 0.5)
+                .sort((a, b) => b.heat - a.heat)
+                .map(item => item.digit);
+            
+            const seed = (signature.hash + i * 37) % (hotDigits.length || 1);
+            const globalHot = hotDigits.length > 0 ? hotDigits[seed] : 5;
+            const localHot = posHotDigits.length > 0 ? posHotDigits[0] : globalHot;
+            const baseDigit = Math.floor((globalHot * 0.6 + localHot * 0.4));
+            
+            const momentumShift = (signature.hash >> (i + 3)) % 3;
+            const finalDigit = (baseDigit + momentumShift + 20) % 10;
+            result += finalDigit.toString();
+        }
         
         return { 
-            result: prediction, 
-            confidence: this.generateSmartPercentage(0.7, 0.8), 
+            result: result, 
+            confidence: this.generateDeterministicPercentage(signature, 8, 0.50, 0.57),
             metodeNum: 8, 
             reason: metodeReasons[8] 
         };
     }
 
     quantumShiftMetode(numbers) {
-        const quantumStates = this.calculateQuantumStates(numbers);
-        const entanglement = this.measureQuantumEntanglement(quantumStates);
-        const superposition = this.applySuperposition(entanglement, numbers);
-        const collapse = this.collapseWaveFunction(superposition);
-        const prediction = this.extractQuantumPrediction(collapse, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        
+        const quantumStates = numbers.map((num, idx) => {
+            const amplitude = Math.sin((idx + 1 + signature.hash * 0.001) * Math.PI / len);
+            const phase = (num * 0.618034 + signature.hash * 0.001) % (2 * Math.PI);
+            const energy = num % (digitLen >= 4 ? 1000 : 100);
+            
+            return { amplitude, phase, energy };
+        });
+        
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            const stateIdx = i % len;
+            const state = quantumStates[stateIdx];
+            const seed = (signature.hash + i * 41) % 100;
+            
+            const waveFunction = state.energy * Math.cos(state.phase + seed * 0.01) * 0.5;
+            const quantumValue = Math.abs(waveFunction + seed * 0.1) % 10;
+            const finalDigit = Math.floor(quantumValue);
+            
+            result += finalDigit.toString();
+        }
         
         return {
-            result: prediction,
-            confidence: this.generateSmartPercentage(0.95, 0.99),
+            result: result,
+            confidence: this.generateDeterministicPercentage(signature, 9, 0.52, 0.58),
             metodeNum: 9,
             reason: metodeReasons[9]
         };
     }
 
     neuralDeepMetode(numbers) {
-        const layers = this.initializeNeuralLayers(numbers);
-        const processed = this.forwardPropagation(layers, numbers);
-        const learned = this.backPropagation(processed);
-        const optimized = this.neuralOptimization(learned);
-        const prediction = this.neuralPrediction(optimized, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        const maxNum = Math.max(...numbers);
+        
+        const inputLayer = numbers.map((num, idx) => {
+            const normalized = maxNum > 0 ? num / maxNum : 0.5;
+            const seed = (signature.hash + idx * 43) % 100;
+            const sigmoid = 1 / (1 + Math.exp(-((normalized - 0.5 + seed * 0.001) * 6)));
+            return { sigmoid, normalized };
+        });
+        
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            const neuronIdx = i % inputLayer.length;
+            const neuron = inputLayer[neuronIdx];
+            const seed = (signature.hash + i * 47) % 100;
+            
+            const weighted = neuron.sigmoid * 0.7 + neuron.normalized * 0.3;
+            const hidden1 = 1 / (1 + Math.exp(-(weighted + seed * 0.001)));
+            const output = hidden1 * 10;
+            const finalDigit = Math.floor(output % 10);
+            
+            result += finalDigit.toString();
+        }
         
         return {
-            result: prediction,
-            confidence: this.generateSmartPercentage(0.92, 0.98),
+            result: result,
+            confidence: this.generateDeterministicPercentage(signature, 10, 0.54, 0.59),
             metodeNum: 10,
             reason: metodeReasons[10]
         };
     }
 
     cosmicWaveMetode(numbers) {
-        const cosmicCycles = this.calculateCosmicCycles(numbers);
-        const solarInfluence = this.measureSolarInfluence(numbers);
-        const lunarPhase = this.calculateLunarPhase();
-        const galacticAlignment = this.measureGalacticAlignment(numbers);
-        const prediction = this.synthesizeCosmicPrediction(cosmicCycles, solarInfluence, lunarPhase, galacticAlignment, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const digitLen = numbers[0].toString().length;
+        
+        const dayOfYear = (signature.sum + signature.hash) % 365 + 1;
+        const lunarCycle = (dayOfYear % 29.53) / 29.53;
+        const solarCycle = Math.sin(2 * Math.PI * dayOfYear / 365.25);
+        
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            const seed = (signature.hash + i * 53) % 100;
+            const cosmicValue = Math.sin(lunarCycle * 2 * Math.PI + seed * 0.01) * 0.5;
+            const solarInfluence = solarCycle * 0.3;
+            
+            const baseDigit = Math.floor(Math.abs((cosmicValue + solarInfluence) * 10 + seed * 0.01)) % 10;
+            const finalDigit = (baseDigit + Math.floor(seed * 0.1)) % 10;
+            
+            result += finalDigit.toString();
+        }
         
         return {
-            result: prediction,
-            confidence: this.generateSmartPercentage(0.88, 0.96),
+            result: result,
+            confidence: this.generateDeterministicPercentage(signature, 11, 0.47, 0.54),
             metodeNum: 11,
             reason: metodeReasons[11]
         };
     }
 
     matrixCoreMetode(numbers) {
-        const matrix = this.buildPredictionMatrix(numbers);
-        const eigenValues = this.calculateEigenValues(matrix);
-        const singularValues = this.performSVD(matrix);
-        const kernel = this.applyKernelTransform(singularValues);
-        const prediction = this.extractMatrixPrediction(kernel, eigenValues, numbers[0].toString().length);
+        const signature = this.calculateInputSignature(numbers);
+        const len = numbers.length;
+        const digitLen = numbers[0].toString().length;
+        const posAnalysis = this.analyzePositionalDigits(numbers);
+        
+        const maxNum = Math.max(...numbers);
+        const minNum = Math.min(...numbers);
+        const range = maxNum - minNum || 1;
+        
+        let trace = 0;
+        for (let i = 0; i < len && i < numbers.length; i++) {
+            trace += ((numbers[i] - minNum) / range) * 80;
+        }
+        
+        let result = '';
+        for (let i = 0; i < digitLen; i++) {
+            const seed = (signature.hash + i * 59) % 100;
+            const matrixBase = Math.abs((trace + seed) * 0.01) % 10;
+            
+            const posHot = posAnalysis[i] && posAnalysis[i].length > 0 ? posAnalysis[i][0].digit : 5;
+            const posWeight = posAnalysis[i] && posAnalysis[i].length > 0 ? posAnalysis[i][0].weight / 100 : 0.5;
+            
+            const hybrid = (matrixBase * 0.4) + (posHot * 0.4) + (posWeight * 0.2);
+            const finalDigit = Math.floor(Math.abs(hybrid) % 10);
+            
+            result += finalDigit.toString();
+        }
         
         return {
-            result: prediction,
-            confidence: this.generateSmartPercentage(0.94, 0.99),
+            result: result,
+            confidence: this.generateDeterministicPercentage(signature, 12, 0.57, 0.60),
             metodeNum: 12,
             reason: metodeReasons[12]
         };
-    }
-
-    calculateQuantumStates(numbers) {
-        const states = [];
-        numbers.forEach((num, idx) => {
-            const binary = num.toString(2);
-            const amplitude = Math.sin(idx * Math.PI / numbers.length);
-            const phase = Math.cos(num * 0.618);
-            states.push({
-                amplitude: amplitude,
-                phase: phase,
-                spin: binary.split('1').length - 1,
-                entanglement: (num * 1.414) % 10
-            });
-        });
-        return states;
-    }
-
-    measureQuantumEntanglement(states) {
-        const entangled = {};
-        for (let i = 0; i < states.length; i++) {
-            for (let j = i + 1; j < states.length; j++) {
-                const correlation = Math.abs(states[i].amplitude * states[j].amplitude);
-                const phaseAlignment = Math.cos(states[i].phase - states[j].phase);
-                entangled[`${i}-${j}`] = correlation * phaseAlignment;
-            }
-        }
-        return entangled;
-    }
-
-    applySuperposition(entanglement, numbers) {
-        const superposition = [];
-        Object.values(entanglement).forEach((strength, idx) => {
-            const interference = strength * Math.sin(numbers[idx % numbers.length] * 2.718);
-            const probability = Math.abs(interference) ** 2;
-            superposition.push(probability);
-        });
-        return superposition;
-    }
-
-    collapseWaveFunction(superposition) {
-        const collapsed = [];
-        superposition.forEach((prob, idx) => {
-            const measurement = prob * Math.random();
-            const observable = Math.floor(measurement * 10) % 10;
-            collapsed.push(observable);
-        });
-        return collapsed;
-    }
-
-    extractQuantumPrediction(collapsed, length) {
-        let prediction = '';
-        const fibonacci = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55];
-        
-        for (let i = 0; i < length; i++) {
-            const quantumIdx = i % collapsed.length;
-            const fibIdx = i % fibonacci.length;
-            const base = collapsed[quantumIdx];
-            const quantum = fibonacci[fibIdx] % 10;
-            const digit = (base + quantum) % 10;
-            prediction += digit.toString();
-        }
-        return prediction;
-    }
-
-    initializeNeuralLayers(numbers) {
-        const inputLayer = numbers.map(n => n / Math.max(...numbers));
-        const hiddenLayer1 = Array(numbers.length * 2).fill(0);
-        const hiddenLayer2 = Array(numbers.length).fill(0);
-        const outputLayer = Array(numbers[0].toString().length).fill(0);
-        
-        return {
-            input: inputLayer,
-            hidden1: hiddenLayer1,
-            hidden2: hiddenLayer2,
-            output: outputLayer
-        };
-    }
-
-    forwardPropagation(layers, numbers) {
-        const weights1 = this.generateWeights(layers.input.length, layers.hidden1.length);
-        const weights2 = this.generateWeights(layers.hidden1.length, layers.hidden2.length);
-        const weights3 = this.generateWeights(layers.hidden2.length, layers.output.length);
-        
-        layers.hidden1.forEach((_, idx) => {
-            let sum = 0;
-            layers.input.forEach((input, inputIdx) => {
-                sum += input * weights1[inputIdx][idx % weights1[inputIdx].length];
-            });
-            layers.hidden1[idx] = this.sigmoid(sum);
-        });
-        
-        layers.hidden2.forEach((_, idx) => {
-            let sum = 0;
-            layers.hidden1.forEach((hidden, hiddenIdx) => {
-                sum += hidden * weights2[hiddenIdx % weights2.length][idx];
-            });
-            layers.hidden2[idx] = this.sigmoid(sum);
-        });
-        
-        layers.output.forEach((_, idx) => {
-            let sum = 0;
-            layers.hidden2.forEach((hidden, hiddenIdx) => {
-                sum += hidden * weights3[hiddenIdx][idx];
-            });
-            layers.output[idx] = this.sigmoid(sum);
-        });
-        
-        return layers;
-    }
-
-    generateWeights(input, output) {
-        const weights = [];
-        for (let i = 0; i < input; i++) {
-            weights[i] = [];
-            for (let j = 0; j < output; j++) {
-                weights[i][j] = (Math.random() - 0.5) * 2;
-            }
-        }
-        return weights;
-    }
-
-    sigmoid(x) {
-        return 1 / (1 + Math.exp(-x));
-    }
-
-    backPropagation(layers) {
-        const learningRate = 0.1;
-        const errors = layers.output.map(output => Math.random() - output);
-        
-        layers.output.forEach((output, idx) => {
-            const adjustment = errors[idx] * learningRate;
-            layers.output[idx] = Math.max(0, Math.min(1, output + adjustment));
-        });
-        
-        return layers;
-    }
-
-    neuralOptimization(layers) {
-        const momentum = 0.9;
-        layers.output.forEach((output, idx) => {
-            const previous = idx > 0 ? layers.output[idx - 1] : 0;
-            layers.output[idx] = output + momentum * previous;
-        });
-        return layers;
-    }
-
-    neuralPrediction(layers, length) {
-        let prediction = '';
-        const golden = 1.618;
-        
-        for (let i = 0; i < length; i++) {
-            const outputIdx = i % layers.output.length;
-            const neuralValue = layers.output[outputIdx];
-            const enhanced = neuralValue * golden * (i + 1);
-            const digit = Math.floor(enhanced * 10) % 10;
-            prediction += digit.toString();
-        }
-        
-        return prediction;
-    }
-
-    calculateCosmicCycles(numbers) {
-        const cycles = {
-            solar: 11,
-            lunar: 29.5,
-            planetary: 365.25,
-            galactic: 25920
-        };
-        
-        const cosmicValues = {};
-        Object.keys(cycles).forEach(cycle => {
-            const sum = numbers.reduce((acc, num) => acc + num, 0);
-            cosmicValues[cycle] = (sum % cycles[cycle]) / cycles[cycle];
-        });
-        
-        return cosmicValues;
-    }
-
-    measureSolarInfluence(numbers) {
-        const now = new Date();
-        const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
-        const solarPosition = Math.sin(2 * Math.PI * dayOfYear / 365.25);
-        
-        const influence = numbers.map(num => {
-            return (num * solarPosition + dayOfYear) % 10;
-        });
-        
-        return influence;
-    }
-
-    calculateLunarPhase() {
-        const now = new Date();
-        const newMoon = new Date('2024-01-11');
-        const lunarCycle = 29.53;
-        const daysSinceNew = (now - newMoon) / (1000 * 60 * 60 * 24);
-        const phase = (daysSinceNew % lunarCycle) / lunarCycle;
-        
-        return {
-            phase: phase,
-            influence: Math.sin(2 * Math.PI * phase),
-            energy: Math.cos(2 * Math.PI * phase)
-        };
-    }
-
-    measureGalacticAlignment(numbers) {
-        const goldenRatio = 1.618033988749;
-        const precession = 25920;
-        const galacticYear = new Date().getFullYear() % precession;
-        
-        const alignment = numbers.map((num, idx) => {
-            const cosmic = (num * goldenRatio + galacticYear + idx * 137.5) % 360;
-            return Math.sin(cosmic * Math.PI / 180);
-        });
-        
-        return alignment;
-    }
-
-    synthesizeCosmicPrediction(cycles, solar, lunar, galactic, length) {
-        let prediction = '';
-        const weights = [0.25, 0.3, 0.25, 0.2];
-        
-        for (let i = 0; i < length; i++) {
-            const solarIdx = i % solar.length;
-            const galacticIdx = i % galactic.length;
-            
-            const cosmicSum = 
-                Object.values(cycles)[i % 4] * weights[0] +
-                solar[solarIdx] * weights[1] +
-                lunar.influence * weights[2] +
-                galactic[galacticIdx] * weights[3];
-            
-            const cosmicDigit = Math.floor(Math.abs(cosmicSum) * 10) % 10;
-            prediction += cosmicDigit.toString();
-        }
-        
-        return prediction;
-    }
-
-    buildPredictionMatrix(numbers) {
-        const size = numbers.length;
-        const matrix = [];
-        
-        for (let i = 0; i < size; i++) {
-            matrix[i] = [];
-            for (let j = 0; j < size; j++) {
-                if (i === j) {
-                    matrix[i][j] = numbers[i];
-                } else {
-                    matrix[i][j] = (numbers[i] * numbers[j]) % 1000;
-                }
-            }
-        }
-        
-        return matrix;
-    }
-
-    calculateEigenValues(matrix) {
-        const size = matrix.length;
-        const eigenValues = [];
-        
-        for (let i = 0; i < size; i++) {
-            let sum = 0;
-            for (let j = 0; j < size; j++) {
-                sum += matrix[i][j];
-            }
-            eigenValues.push(sum / size);
-        }
-        
-        return eigenValues;
-    }
-
-    performSVD(matrix) {
-        const singular = [];
-        const size = matrix.length;
-        
-        for (let i = 0; i < size; i++) {
-            let value = 0;
-            for (let j = 0; j < size; j++) {
-                value += matrix[i][j] * matrix[j][i];
-            }
-            singular.push(Math.sqrt(Math.abs(value)));
-        }
-        
-        return singular;
-    }
-
-    applyKernelTransform(singularValues) {
-        const gamma = 0.1;
-        return singularValues.map(value => {
-            return Math.exp(-gamma * value * value);
-        });
-    }
-
-    extractMatrixPrediction(kernel, eigenValues, length) {
-        let prediction = '';
-        const phi = 1.618033988749;
-        
-        for (let i = 0; i < length; i++) {
-            const kernelIdx = i % kernel.length;
-            const eigenIdx = i % eigenValues.length;
-            
-            const matrixValue = kernel[kernelIdx] * eigenValues[eigenIdx] * phi;
-            const digit = Math.floor(Math.abs(matrixValue) * 10) % 10;
-            prediction += digit.toString();
-        }
-        
-        return prediction;
     }
 
     getAllMetodes() {
@@ -541,291 +634,5 @@ class MetodeEngine {
             (numbers) => this.cosmicWaveMetode(numbers),
             (numbers) => this.matrixCoreMetode(numbers)
         ];
-    }
-
-    analyzePatterns(digits) {
-        const patterns = {
-            sequence: [],
-            differences: [],
-            modular: []
-        };
-        
-        for (let i = 1; i < digits.length; i++) {
-            patterns.differences.push(digits[i] - digits[i-1]);
-            patterns.modular.push((digits[i] * 3 + digits[i-1] * 2) % 10);
-        }
-        
-        patterns.sequence = digits.slice();
-        return patterns;
-    }
-
-    predictFromPatterns(patterns, length) {
-        let result = '';
-        const fibonacci = [1, 1, 2, 3, 5, 8, 13, 21];
-        
-        for (let i = 0; i < length; i++) {
-            const seqIdx = i % patterns.sequence.length;
-            const diffIdx = i % (patterns.differences.length || 1);
-            const modIdx = i % (patterns.modular.length || 1);
-            const fibIdx = i % fibonacci.length;
-            
-            const baseDigit = patterns.sequence[seqIdx] || 0;
-            const diffAdjust = patterns.differences[diffIdx] || 0;
-            const modAdjust = patterns.modular[modIdx] || 0;
-            const fibAdjust = fibonacci[fibIdx];
-            
-            const finalDigit = Math.abs(baseDigit + diffAdjust + modAdjust + fibAdjust) % 10;
-            result += finalDigit.toString();
-        }
-        
-        return result;
-    }
-
-    applyAdvancedModulo(sum, position, count) {
-        const modifiers = [7, 11, 13, 17, 19];
-        const modifier = modifiers[position % modifiers.length];
-        const adjusted = sum + (position * count);
-        return adjusted % modifier % 10;
-    }
-
-    generateCyclicPattern(lastTwoDigits) {
-        const cycle = [];
-        lastTwoDigits.forEach(num => {
-            cycle.push(num % 10);
-            cycle.push(Math.floor(num / 10) % 10);
-        });
-        return cycle;
-    }
-
-    extrapolateCyclic(cycle, length) {
-        let result = '';
-        const fibonacci = [1, 1, 2, 3, 5, 8, 13, 21, 34];
-        
-        for (let i = 0; i < length; i++) {
-            const cycleIdx = i % cycle.length;
-            const fibIdx = i % fibonacci.length;
-            const base = cycle[cycleIdx];
-            const modifier = fibonacci[fibIdx];
-            const digit = (base + modifier) % 10;
-            result += digit.toString();
-        }
-        
-        return result;
-    }
-
-    detectTwinPatterns(numbers) {
-        const twins = {};
-        
-        numbers.forEach(num => {
-            const str = num.toString();
-            for (let i = 0; i < str.length - 1; i++) {
-                if (str[i] === str[i + 1]) {
-                    const twin = str[i];
-                    twins[twin] = (twins[twin] || 0) + 1;
-                }
-            }
-        });
-        
-        return twins;
-    }
-
-    amplifyTwinSignals(twins) {
-        const amplified = {};
-        const totalTwins = Object.values(twins).reduce((a, b) => a + b, 0);
-        
-        if (totalTwins === 0) {
-            for (let i = 0; i < 10; i++) {
-                amplified[i] = 10;
-            }
-            return amplified;
-        }
-        
-        Object.keys(twins).forEach(digit => {
-            const count = twins[digit];
-            amplified[digit] = Math.floor((count / totalTwins) * 100);
-        });
-        
-        return amplified;
-    }
-
-    synthesizeTwinPrediction(amplified, length) {
-        const sortedTwins = Object.entries(amplified)
-            .sort(([,a], [,b]) => b - a)
-            .map(([digit]) => digit);
-        
-        if (sortedTwins.length === 0) {
-            let result = '';
-            for (let i = 0; i < length; i++) {
-                result += ((i * 3 + 7) % 10).toString();
-            }
-            return result;
-        }
-        
-        let result = '';
-        for (let i = 0; i < length; i++) {
-            const twinIdx = i % sortedTwins.length;
-            const baseTwin = parseInt(sortedTwins[twinIdx]);
-            const variation = Math.floor(i / sortedTwins.length);
-            result += ((baseTwin + variation) % 10).toString();
-        }
-        
-        return result;
-    }
-
-    calculateAdvancedFrequency(digits) {
-        const freq = Array(10).fill(0);
-        const weights = [1, 2, 3, 4, 5];
-        
-        digits.forEach((digit, idx) => {
-            const weight = weights[idx % weights.length];
-            freq[digit] += weight;
-        });
-        
-        return freq;
-    }
-
-    selectOptimalTardal(frequency, count) {
-        return frequency
-            .map((freq, digit) => ({ digit, freq }))
-            .sort((a, b) => b.freq - a.freq)
-            .slice(0, count)
-            .map(item => item.digit);
-    }
-
-    constructFromTardal(tardal, length) {
-        if (tardal.length === 0) {
-            let result = '';
-            for (let i = 0; i < length; i++) {
-                result += ((i * 7 + 3) % 10).toString();
-            }
-            return result;
-        }
-        
-        let result = '';
-        const fibonacci = [1, 1, 2, 3, 5, 8, 13, 21];
-        
-        for (let i = 0; i < length; i++) {
-            const tardalIdx = fibonacci[i % fibonacci.length] % tardal.length;
-            const baseDigit = tardal[tardalIdx];
-            const shift = Math.floor(i / tardal.length);
-            result += ((baseDigit + shift) % 10).toString();
-        }
-        
-        return result;
-    }
-
-    performMultiFactorAnalysis(numbers) {
-        return {
-            trend: this.calculateTrend(numbers),
-            volatility: this.calculateVolatility(numbers),
-            momentum: this.calculateMomentum(numbers),
-            correlation: this.calculateCorrelation(numbers)
-        };
-    }
-
-    calculateTrend(numbers) {
-        let trend = 0;
-        for (let i = 1; i < numbers.length; i++) {
-            trend += numbers[i] - numbers[i - 1];
-        }
-        return trend / (numbers.length - 1);
-    }
-
-    calculateVolatility(numbers) {
-        const mean = numbers.reduce((a, b) => a + b, 0) / numbers.length;
-        const variance = numbers.reduce((acc, num) => acc + Math.pow(num - mean, 2), 0) / numbers.length;
-        return Math.sqrt(variance);
-    }
-
-    calculateMomentum(numbers) {
-        if (numbers.length < 3) return 0;
-        const recent = numbers.slice(-3);
-        return recent[2] - recent[0];
-    }
-
-    calculateCorrelation(numbers) {
-        let correlation = 0;
-        for (let i = 1; i < numbers.length; i++) {
-            const str1 = numbers[i - 1].toString();
-            const str2 = numbers[i].toString();
-            let matches = 0;
-            for (let j = 0; j < Math.min(str1.length, str2.length); j++) {
-                if (str1[j] === str2[j]) matches++;
-            }
-            correlation += matches / Math.max(str1.length, str2.length);
-        }
-        return correlation / (numbers.length - 1);
-    }
-
-    findConvergencePoints(analysis) {
-        const { trend, volatility, momentum, correlation } = analysis;
-        
-        return {
-            stabilityPoint: Math.abs(trend) < 100 ? trend : trend % 100,
-            volatilityFactor: volatility % 10,
-            momentumShift: momentum % 10,
-            correlationBase: Math.floor(correlation * 10) % 10
-        };
-    }
-
-    optimizeWithML(points, length) {
-        let result = '';
-        const weights = [0.4, 0.3, 0.2, 0.1];
-        
-        for (let i = 0; i < length; i++) {
-            const weighted = 
-                points.stabilityPoint * weights[0] +
-                points.volatilityFactor * weights[1] +
-                points.momentumShift * weights[2] +
-                points.correlationBase * weights[3];
-            
-            const optimized = Math.floor(Math.abs(weighted + i * 1.414)) % 10;
-            result += optimized.toString();
-        }
-        
-        return result;
-    }
-
-    analyzeTrends(numbers, window) {
-        const trends = [];
-        for (let i = window; i < numbers.length; i++) {
-            const subset = numbers.slice(i - window, i);
-            trends.push(this.calculateTrend(subset));
-        }
-        return trends;
-    }
-
-    generateHeatMap(trends) {
-        const heatMap = {};
-        trends.forEach((trend, idx) => {
-            const intensity = Math.abs(trend) * 100;
-            const digit = Math.floor(intensity) % 10;
-            heatMap[digit] = (heatMap[digit] || 0) + intensity;
-        });
-        return heatMap;
-    }
-
-    extractHotPattern(heatMap, length) {
-        const hotDigits = Object.entries(heatMap)
-            .sort(([,a], [,b]) => b - a)
-            .map(([digit]) => parseInt(digit));
-        
-        if (hotDigits.length === 0) {
-            let result = '';
-            for (let i = 0; i < length; i++) {
-                result += ((i * 5 + 2) % 10).toString();
-            }
-            return result;
-        }
-        
-        let result = '';
-        for (let i = 0; i < length; i++) {
-            const hotIndex = i % hotDigits.length;
-            const baseHot = hotDigits[hotIndex];
-            const thermalShift = Math.floor(i / hotDigits.length);
-            result += ((baseHot + thermalShift) % 10).toString();
-        }
-        
-        return result;
     }
 }
